@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Интерфејс за нарачки</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer"/>
+    <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="style.css">
+    <link type="text/js" href="l10n/mk.js">
+    <script src="flatpickr.min.js"></script>
+</head>
+<body>
+    <div id="login-container">
+        <div class="login-box">
+            <h2>Најава</h2>
+            <form id="login-form">
+                <div class="input-group">
+                    <label for="username">Корисничко име:</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Лозинка:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit">Најави се</button>
+                <p id="login-error-message" style="display: none;"></p>
+            </form>
+        </div>
+    </div>
+    <div id="main-content">
+        <div id="loading-overlay" style="display: none;">
+            <div class="loading-spinner"></div>
+        </div>
+        <div class="taskbar">
+            <img src="/jumis/jumis-logo.svg" alt="Logo" class="logo">
+            <div class="buttons">
+                <button class="get-today-orders"><i class="fas fa-download"></i>Преземи денешни нарачки</button>
+                <button class="get-orders-from-period"><i class="fas fa-cloud-download-alt"></i>Преземи нарачки од период</button>
+                <button class="get-a-order" id="get-a-order"><i class="fas fa-file-download"></i>Преземи нарачка</button>
+                <button id="show-offer-import"><i class="fas fa-history"></i>Преземи од претходни понуди</button>
+                <button id="send-to-task-manager"><i class="fas fa-paper-plane"></i>Испрати до Task Manager</button>
+                <button id="logout-button" title="Одјави се"><i class="fa fa-sign-out" aria-hidden="true"></i></button>
+            </div>
+        </div>
+        <div id="order-container"></div>
+        <div id="offer-import-popup">
+            <h2>Селектирај од листата на понуди за преземање</h2>
+            <div id="offer-tables-container"></div>
+            <button id="import-selected-offers">Преземи</button>
+            <button id="close-offer-import"><i class="fas fa-close"></i></button>
+        </div>
+        <div id="period-popup">
+            <h2>Избери период за преземање на нарачки</h2>
+            <label for="date-range">Избери период:</label>
+            <input type="text" id="date-range" name="date-range" placeholder="Пр: Од 01.01.2025 до 31.12.2025" readonly>
+            <button id="get-orders-period-button">Преземи</button>
+            <button id="close-period-popup"><i class="fas fa-close"></i></button>
+        </div>
+        <div id="orderSearchPopup">
+            <h2>Преземи нарачка по шифра:</h2>
+            <label for="orderSearchInput">Внеси шифра на нарачка:</label>
+            <input type="text" id="orderSearchInput" name="orderSearchInput" placeholder="Пр: 25-011-0011" list="orderSuggestions">
+            <datalist id="orderSuggestions"></datalist>
+            <button id="searchOrderButton">Преземи</button>
+            <button id="close-orderSearchPopup"><i class="fas fa-close"></i></button>
+            <div id="orderSearchResults"></div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginContainer = document.getElementById('login-container');
+            const mainContent = document.getElementById('main-content');
+            const loginForm = document.getElementById('login-form');
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            const loginErrorMessage = document.getElementById('login-error-message');
+            const logoutButton = document.getElementById('logout-button');
+            const loggedInUsernameSpan = document.getElementById('logged-in-username'); // This element is not in your HTML, consider adding it if you want to display the username.
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            function showLoading() {
+                loadingOverlay.style.display = 'flex';
+            }
+
+            function hideLoading() {
+                loadingOverlay.style.display = 'none';
+            }
+
+            // Function to set login status in localStorage
+            function setLoggedIn(username) {
+                localStorage.setItem('isLoggedIn', 'true');
+                localStorage.setItem('loggedInUsername', username);
+            }
+
+            // Function to clear login status from localStorage
+            function clearLoggedIn() {
+                localStorage.removeItem('isLoggedIn');
+                localStorage.removeItem('loggedInUsername');
+                localStorage.removeItem('missingDataHandled'); // Clear missing data flag on logout
+            }
+
+            async function checkLoginStatus() {
+                // First, check localStorage for login status
+                const isLoggedInLocalStorage = localStorage.getItem('isLoggedIn');
+                if (isLoggedInLocalStorage === 'true') {
+                    showMainContent(localStorage.getItem('loggedInUsername'));
+                    // Then, verify with the server in the background without blocking the UI
+                    try {
+                        const response = await fetch('auth.php?action=check_session');
+                        const data = await response.json();
+                        if (!data.loggedin) {
+                            // If localStorage says logged in but server says no, clear local storage and show login
+                            clearLoggedIn();
+                            showLoginScreen();
+                        } else {
+                            // If session is still valid, load orders
+                            loadOrders();
+                        }
+                    } catch (error) {
+                        console.error('Error checking login status:', error);
+                        // If there's a network error, assume logged out or show an error
+                        clearLoggedIn();
+                        showLoginScreen();
+                    }
+                } else {
+                    // If not logged in according to localStorage, show login screen immediately
+                    showLoginScreen();
+                }
+            }
+
+            function showLoginScreen() {
+                loginContainer.style.display = 'flex';
+                mainContent.style.display = 'none';
+            }
+
+            function showMainContent(username) {
+                loginContainer.style.display = 'none';
+                mainContent.style.display = 'block';
+                if (loggedInUsernameSpan) {
+                    loggedInUsernameSpan.textContent = username;
+                }
+            }
+
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                showLoading();
+                loginErrorMessage.style.display = 'none';
+                const username = usernameInput.value;
+                const password = passwordInput.value;
+
+                try {
+                    const response = await fetch('auth.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ action: 'login', username, password })
+                    });
+                    const data = await response.json();
+                    hideLoading();
+                    if (data.success) {
+                        setLoggedIn(username); // Set login status in localStorage
+                        showMainContent(username);
+                        // After successful login, load orders. Clear the missing data flag as new data is expected.
+                        localStorage.removeItem('missingDataHandled');
+                        loadOrders();
+                    } else {
+                        loginErrorMessage.textContent = data.message || 'Login failed. Please try again.';
+                        loginErrorMessage.style.display = 'block';
+                    }
+                } catch (error) {
+                    hideLoading();
+                    console.error('Error during login:', error);
+                    loginErrorMessage.textContent = 'Се појави грешка при најавувањето. Обидете се повторно подоцна.';
+                    loginErrorMessage.style.display = 'block';
+                }
+            });
+
+            logoutButton.addEventListener('click', async () => {
+                showLoading();
+                try {
+                    const response = await fetch('auth.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ action: 'logout' })
+                    });
+                    const data = await response.json();
+                    hideLoading();
+                    if (data.success) {
+                        clearLoggedIn(); // Clear login status from localStorage
+                        clearLocalStorage(); // Clear orders data from localStorage
+                        showLoginScreen();
+                        alert('Успешно сте одјавени!');
+                    } else {
+                        alert('Грешка при одјавување: ' + (data.message || 'Непозната грешка.'));
+                    }
+                } catch (error) {
+                    hideLoading();
+                    console.error('Error during logout:', error);
+                    alert('Грешка при одјавување: ' + error.message);
+                }
+            });
+
+            let missingDataMessages = [];
+            const getTodayOrdersButton = document.querySelector('.get-today-orders');
+            const getOrdersFromPeriodButton = document.querySelector('.get-orders-from-period');
+            const periodPopup = document.getElementById('period-popup');
+            const closePeriodPopupButton = document.getElementById('close-period-popup');
+            const getOrdersPeriodButton = document.getElementById('get-orders-period-button');
+            const dateRangeInput = document.getElementById('date-range');
+            const orderContainer = document.getElementById('order-container');
+            let globalDeptValues = [];
+            let globalClassifValues = [];
+
+            async function fetchGlobalValues() {
+                try {
+                    const response = await fetch('global_values.php');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    const defaultDepts = ["Производство РАМНИ ПОВРШИНИ", "Производство ТАПЕТАРИЈА", "Производство СТОЛИЧАРА", "Производство ФАРБАРА", "Производство БРАВАРИЈА", "Производство МАГАЦИН"];
+                    const defaultClassifs = ["Агол", "БИР", "ГРТ", "ДВО", "ДУШ", "КАУ", "КМ", "КОМ", "КОНСТ", "КРЕ", "КУЈ", "Лежалка", "Лежај", "НАТ", "ОГЛ", "ОПЕРАЦИИ", "ПЕР", "ПЛА", "СТО", "ТАБ", "ТМ", "ТРО", "ТС", "ФИО", "ФОТ"];
+                    if (data.departments && Array.isArray(data.departments)) {
+                        globalDeptValues = data.departments;
+                        console.log("Fetched Global Department Values:", globalDeptValues);
+                    } else {
+                        console.warn("No global department values found or invalid format from global_values.php. Using defaults.");
+                        globalDeptValues = defaultDepts;
+                    }
+                    if (data.classifications && Array.isArray(data.classifications)) {
+                        globalClassifValues = data.classifications;
+                        console.log("Fetched Global Classification Values:", globalClassifValues);
+                    } else {
+                        console.warn("No global classification values found or invalid format from global_values.php. Using defaults.");
+                        globalClassifValues = defaultClassifs;
+                    }
+                } catch (error) {
+                    console.error('Error fetching global values from jumis/global_values.php:', error);
+                    globalDeptValues = ["Производство РАМНИ ПОВРШИНИ", "Производство ТАПЕТАРИЈА", "Производство СТОЛИЧАРА", "Производство ФАРБАРА", "Производство БРАВАРИЈА", "Производство МАГАЦИН"];
+                    globalClassifValues = ["Агол", "БИР", "ГРТ", "ДВО", "ДУШ", "КАУ", "КМ", "КОМ", "КОНСТ", "КРЕ", "КУЈ", "Лежалка", "Лежај", "НАТ", "ОГЛ", "ОПЕРАЦИИ", "ПЕР", "ПЛА", "СТО", "ТАБ", "ТМ", "ТРО", "ТС", "ФИО", "ФОТ"];
+                }
+            }
+            fetchGlobalValues();
+
+            function checkForMissingData(orders) {
+                const missingData = [];
+                if (!orders || !Array.isArray(orders)) return missingData;
+
+                orders.forEach(order => {
+                    if (!order.Orderitem || !Array.isArray(order.Orderitem) || order.Orderitem.length === 0) {
+                        missingData.push({ orderKey: order.acKeyView, field: "Orderitem" });
+                    } else {
+                        order.Orderitem.forEach((item, itemIndex) => {
+                            for (const key in item) {
+                                if (item.hasOwnProperty(key) && (key === 'acDept' || key === 'ACCLASSIF' || key === 'acIdent' || key === 'acName' || key === 'anQty')) {
+                                    if (item[key] === null || item[key] === undefined || String(item[key]).trim() === "") {
+                                        missingData.push({ orderKey: order.acKeyView, field: `Orderitem.${itemIndex}.${key}` });
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
+                return missingData;
+            }
+
+            function displayMissingDataModal(missingData, orders, importFunction) {
+                if (missingData.length === 0) {
+                    importFunction(orders);
+                    return;
+                }
+
+                const overlay = document.createElement('div');
+                overlay.id = 'modal-overlay';
+                document.body.appendChild(overlay);
+
+                const modal = document.createElement('div');
+                modal.id = 'missing-data-modal';
+
+                let modalContent = `
+                    <h3>Во некои полиња недостасуваат вредности!!!</h3>
+                    <table class="order-table missing">
+                        <tbody>
+                            <tr></tr>
+                            <tr>
+                                <th>Импорт</th>
+                                <th>Нарачка</th>
+                                <th>Полиња кои недостатсуваат</th>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button id="continue-import">Импортирај ги избраните нарачки</button>
+                    <button id="terminate-import">Стопирај го импортот</button>
+                    <button id="close-missing-data-modal"><i class="fas fa-close"></i></button>
+                `;
+
+                const ordersWithMissingData = new Set();
+                const missingDataByOrder = {};
+                missingData.forEach(item => {
+                    ordersWithMissingData.add(item.orderKey);
+                    if (!missingDataByOrder[item.orderKey]) {
+                        missingDataByOrder[item.orderKey] = [];
+                    }
+                    missingDataByOrder[item.orderKey].push(item.field);
+                });
+
+                const ordersToShow = orders.filter(order => ordersWithMissingData.has(order.acKeyView));
+
+                let tbodyContent = '';
+                ordersToShow.forEach(order => {
+                    const isMissing = true;
+                    tbodyContent += `
+                        <tr>
+                            <th><input type="checkbox" id="order-${order.acKeyView}" value="${order.acKeyView}"></th>
+                            <th>${order.acKeyView}</th>
+                            <th>
+                    `;
+                    const missingFields = missingDataByOrder[order.acKeyView];
+                    if (missingFields.length === 1 && missingFields[0] === "Orderitem") {
+                        tbodyContent += `<span style="color: red;">Оваа нарачка нема иденти</span>`;
+                    } else {
+                        missingFields.forEach((field, index) => {
+                            let fieldName = "";
+                            let acIdentValue = "";
+                            const fieldParts = field.split(".");
+                            const itemIndex = parseInt(fieldParts[1]);
+                            const missingKey = fieldParts[2];
+                            const missingOrderItem = order.Orderitem[itemIndex];
+
+                            if (missingOrderItem) {
+                                acIdentValue = missingOrderItem.acIdent || "";
+                                if (missingKey === "acIdent") {
+                                    fieldName = "Шифра на артиклот";
+                                } else if (missingKey === "acName") {
+                                    fieldName = "Назив на артиклот";
+                                } else if (missingKey === "anQty") {
+                                    fieldName = "Количина";
+                                } else if (missingKey === "acDept") {
+                                    fieldName = "Оддел";
+                                } else if (missingKey === "ACCLASSIF") {
+                                    fieldName = "Класификација";
+                                }
+                                tbodyContent += fieldName + " во " + acIdentValue;
+                                if (missingFields.length > 1 && index < missingFields.length - 1) {
+                                    if (index === missingFields.length - 2) {
+                                        tbodyContent += " и ";
+                                    } else {
+                                        tbodyContent += ", ";
+                                    }
+                                }
+                            } else {
+                                console.error("Нема иденти во нарачката:", order.acKeyView);
+                            }
+                        });
+                    }
+                    tbodyContent += `</th></tr>`;
+                });
+
+                modal.innerHTML = `
+                    <h3>Во некои полиња недостасуваат вредности!!!</h3>
+                    <table class="order-table missing">
+                        <tbody>
+                            <tr></tr>
+                            <tr>
+                                <th>Импорт</th>
+                                <th>Нарачка</th>
+                                <th>Полиња кои недостатсуваат</th>
+                            </tr>
+                            ${tbodyContent}
+                        </tbody>
+                    </table>
+                    <button id="continue-import">Импортирај ги избраните нарачки</button>
+                    <button id="terminate-import">Стопирај го импортот</button>
+                    <button id="close-missing-data-modal"><i class="fas fa-close"></i></button>
+                `;
+                document.body.appendChild(modal);
+
+                const table = document.querySelector('#missing-data-modal table');
+                let lastChecked = null;
+                if (table) {
+                    table.addEventListener('mouseover', (event) => {
+                        const target = event.target;
+                        const row = target.closest('tr');
+                        if (row) {
+                            const checkbox = row.querySelector('input[type="checkbox"]');
+                            if (checkbox && !checkbox.checked) {
+                                row.classList.add('hovered');
+                            }
+                        }
+                    });
+
+                    table.addEventListener('mouseout', (event) => {
+                        const target = event.target;
+                        const row = target.closest('tr');
+                        if (row) {
+                            row.classList.remove('hovered');
+                        }
+                    });
+
+                    table.addEventListener('click', (event) => {
+                        const target = event.target;
+                        const row = target.closest('tr');
+                        if (row) {
+                            const checkbox = row.querySelector('input[type="checkbox"]');
+                            if (checkbox) {
+                                if (event.shiftKey && lastChecked) {
+                                    const checkboxes = Array.from(table.querySelectorAll('input[type="checkbox"]'));
+                                    const start = checkboxes.indexOf(lastChecked);
+                                    const end = checkboxes.indexOf(checkbox);
+                                    const [min, max] = [Math.min(start, end), Math.max(start, end)];
+                                    for (let i = min; i <= max; i++) {
+                                        checkboxes[i].checked = true;
+                                    }
+                                } else {
+                                    checkbox.checked = !checkbox.checked;
+                                    lastChecked = checkbox;
+                                }
+                                row.classList.remove('hovered');
+                            }
+                        }
+                    });
+                }
+
+                document.getElementById('continue-import').addEventListener('click', () => {
+                    const selectedOrders = [];
+                    const unselectedOrders = [];
+                    document.querySelectorAll('#missing-data-modal input[type="checkbox"]').forEach(checkbox => {
+                        const orderKey = checkbox.value;
+                        const selectedOrder = orders.find(order => order.acKeyView === orderKey);
+                        if (selectedOrder) {
+                            if (checkbox.checked) {
+                                selectedOrders.push(selectedOrder);
+                            } else {
+                                unselectedOrders.push(selectedOrder);
+                            }
+                        }
+                    });
+                    modal.remove();
+                    overlay.remove();
+                    // Set flag to indicate missing data has been handled for this session
+                    localStorage.setItem('missingDataHandled', 'true');
+
+                    let ordersToLoad = [];
+                    if (selectedOrders.length > 0) {
+                        const ordersWithoutMissing = orders.filter(order => !missingData.some(md => md.orderKey === order.acKeyView));
+                        ordersToLoad = [...selectedOrders, ...ordersWithoutMissing.filter(order => !selectedOrders.includes(order))];
+                    } else {
+                        ordersToLoad = orders.filter(order => !unselectedOrders.includes(order));
+                    }
+                    loadOrders(ordersToLoad, true);
+                });
+
+                document.getElementById('terminate-import').addEventListener('click', () => {
+                    modal.remove();
+                    overlay.remove();
+                    // Do not set missingDataHandled as import was terminated
+                    window.location.reload(true);
+                });
+
+                document.getElementById('close-missing-data-modal').addEventListener('click', () => {
+                    modal.remove();
+                    overlay.remove();
+                    // Do not set missingDataHandled as import was closed
+                    window.location.reload(true);
+                });
+
+                overlay.addEventListener('click', (event) => {
+                    if (event.target === overlay) {
+                        modal.remove();
+                        overlay.remove();
+                        // Do not set missingDataHandled as import was closed via overlay
+                        window.location.reload(true);
+                    }
+                });
+            }
+
+            const style = document.createElement('style');
+            style.textContent = `
+                #missing-data-modal table tr.hovered {
+                    background-color: #736b6c9e;
+                    cursor: pointer;
+                }
+            `;
+            document.head.appendChild(style);
+
+            getTodayOrdersButton.addEventListener('click', () => {
+                showLoading();
+                clearLocalStorage(); // Clear existing orders
+                localStorage.removeItem('missingDataHandled'); // Clear missing data flag for new data
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                const formattedDate = `${year}-${month}-${day}`;
+                fetch('lista-na-identi-sorted.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'date=' + formattedDate
+                }).then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => {
+                            throw new Error(err.error || 'HTTP error ' + response.status)
+                        });
+                    }
+                    return response.json();
+                }).then(data => {
+                    console.log("Response from PHP (Today's Orders):", data);
+                    if (data.message) {
+                        alert(data.message);
+                    }
+                    if (data.error) {
+                        alert("Грешка: " + data.error);
+                    }
+                    if (data.orders) {
+                        loadOrders(data.orders, false, false); // Don't skip missing data check for new orders
+                    } else if (data.message && data.message.includes('Нема денешни нарачки')) {
+                        orderContainer.innerHTML = "<p class='order-missing'>Нема денешни нарачки.</p>";
+                    }
+                    hideLoading();
+                }).catch(error => {
+                    console.error('Error (Today\'s Orders):', error);
+                    alert('Нема денешни нарачки. Обиди се повторно покасно.');
+                    hideLoading();
+                });
+            });
+
+            flatpickr("#date-range", {
+                mode: "range",
+                dateFormat: "d.m.Y",
+                maxDate: "today",
+                onClose: function (selectedDates, dateStr, instance) {
+                    if (selectedDates.length === 1) {
+                        dateRangeInput.value = instance.formatDate(selectedDates[0], "d.m.Y");
+                    } else if (selectedDates.length === 2) {
+                        dateRangeInput.value = instance.formatDate(selectedDates[0], "d.m.Y") + " до " + instance.formatDate(selectedDates[1], "d.m.Y");
+                    }
+                    if (selectedDates.length > 0) {
+                        const endDate = new Date(selectedDates[selectedDates.length - 1]);
+                        const today = new Date();
+                        endDate.setHours(0, 0, 0, 0);
+                        today.setHours(0, 0, 0, 0);
+                        if (endDate > today) {
+                            alert("Не можете да изберете датуми во иднина.");
+                            instance.clear();
+                            return;
+                        }
+                    }
+                }
+            });
+
+            getOrdersFromPeriodButton.addEventListener('click', () => {
+                periodPopup.style.display = 'block';
+                const overlay = document.createElement('div');
+                overlay.id = 'modal-overlay';
+                document.body.appendChild(overlay);
+                overlay.addEventListener('click', (event) => {
+                    if (event.target === overlay) {
+                        periodPopup.style.display = 'none';
+                        overlay.style.display = 'none';
+                    }
+                });
+            });
+
+            closePeriodPopupButton.addEventListener('click', () => {
+                periodPopup.style.display = 'none';
+                const overlay = document.getElementById('modal-overlay');
+                if (overlay) overlay.remove();
+            });
+
+            getOrdersPeriodButton.addEventListener('click', () => {
+                showLoading();
+                clearLocalStorage(); // Clear existing orders
+                localStorage.removeItem('missingDataHandled'); // Clear missing data flag for new data
+                let dateRange = dateRangeInput.value;
+                if (!dateRange) {
+                    alert("Ве молиме изберете период.");
+                    hideLoading();
+                    return;
+                }
+                let dates = dateRange.split(" до ");
+                let startDate = dates[0];
+                let endDate = dates[1];
+
+                if (!endDate) {
+                    endDate = startDate;
+                    dateRange = startDate + " до " + endDate;
+                    dateRangeInput.value = dateRange;
+                }
+
+                if (!startDate || !endDate) {
+                    alert("Невалиден период.");
+                    hideLoading();
+                    return;
+                }
+
+                fetch('lista-na-identi-sorted.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `start_date=${startDate}&end_date=${endDate}`
+                }).then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => {
+                            throw new Error(err.error || 'HTTP error ' + response.status)
+                        });
+                    }
+                    return response.json();
+                }).then(data => {
+                    console.log("Response from PHP (Period Orders):", data);
+                    if (data.message) {
+                        alert(data.message);
+                    }
+                    if (data.error) {
+                        alert("Грешка: " + data.error);
+                    }
+                    if (data.orders) {
+                        loadOrders(data.orders, false, false); // Don't skip missing data check for new orders
+                    } else if (data.message && data.message.includes('Нема нарачки')) {
+                        orderContainer.innerHTML = "<p class='order-missing'>Нема нарачки за избраниот период.</p>";
+                    }
+                    hideLoading();
+                    periodPopup.style.display = 'none';
+                    const overlay = document.getElementById('modal-overlay');
+                    if (overlay) overlay.remove();
+                    overlay.remove(); // This seems redundant, remove one
+                }).catch(error => {
+                    console.error('Error (Period Orders):', error);
+                    alert('Грешка при преземање на нарачки од период: ' + error.message);
+                    hideLoading();
+                    periodPopup.style.display = 'none';
+                    const overlay = document.getElementById('modal-overlay');
+                    if (overlay) overlay.remove();
+                });
+            });
+
+            // Call checkLoginStatus on DOMContentLoaded to decide whether to show login or main content
+            checkLoginStatus();
+
+            function convertDateToTimestamp(dateString) {
+                const date = new Date(dateString);
+                return date.getTime();
+            }
+
+            let currentEditableField = null;
+            let currentFieldType = '';
+            let currentFieldIndex = 0;
+
+            function showContextMenu(e, fieldElement, orderKey, orderItemTempId, fieldType, fieldIndex = 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                currentEditableField = fieldElement;
+                currentFieldType = fieldType;
+                currentFieldIndex = fieldIndex;
+
+                let values = [];
+                if (fieldType === 'acDept') {
+                    values = [...globalDeptValues];
+                } else if (fieldType === 'ACCLASSIF') {
+                    values = [...globalClassifValues];
+                }
+
+                const existingMenu = document.querySelector('.context-menu');
+                if (existingMenu) {
+                    existingMenu.remove();
+                }
+
+                const menu = document.createElement('div');
+                menu.classList.add('context-menu');
+                const ul = document.createElement('ul');
+            
+            	// Get the current order item to check existing acDept values
+    			const storedOrders = JSON.parse(localStorage.getItem('ordersData'));
+    			const orderToUpdate = storedOrders ? storedOrders.find(o => o.acKeyView === orderKey) : null;
+    			const itemToUpdate = orderToUpdate ? orderToUpdate.Orderitem.find(item => item.tempId === orderItemTempId) : null;
+
+    			// Collect already selected acDept values for this item
+    			const selectedDeptValues = new Set();
+    			if (itemToUpdate && fieldType === 'acDept') {
+        			for (let i = 2; i <= 6; i++) { // Check acDept2 to acDept6
+            			const key = `acDept${i}`;
+            			if (itemToUpdate[key] && String(itemToUpdate[key]).trim() !== "") {
+                			selectedDeptValues.add(String(itemToUpdate[key]).trim().toLowerCase());
+            			}
+        			}
+    			}
+            
+            	if (values.length > 0) {
+        			values.forEach(val => {
+            			const li = document.createElement('li');
+            			li.textContent = val;
+
+            			const isAlreadySelected = selectedDeptValues.has(val.toLowerCase());
+
+            			if (fieldType === 'acDept' && isAlreadySelected) {
+                			li.classList.add('selected-context-option'); // Add a class for styling
+                			li.style.pointerEvents = 'none'; // Prevent click
+                			// Optional: li.title = "Already selected"; // Add a tooltip
+            			} else {
+                			li.addEventListener('click', () => {
+                    			currentEditableField.value = val;
+                    			updateOrderItemField(currentEditableField.dataset.orderKey, currentEditableField.dataset.orderItemTempId, currentFieldType, val, parseInt(currentEditableField.dataset.index));
+                    			menu.remove();
+                			});
+            			}
+            			ul.appendChild(li);
+        			});
+    			} else {
+        			const li = document.createElement('li');
+        			li.textContent = "Нема достапни опции";
+        			li.style.fontStyle = 'italic';
+        			li.style.color = '#888';
+        			ul.appendChild(li);
+    			}
+    			menu.appendChild(ul);
+    			document.body.appendChild(menu);
+
+
+            
+				// Calculate menu position
+				let menuLeft = e.clientX;
+				let menuTop = e.pageY; // <--- Change e.clientY to e.pageY
+
+				// Temporarily display the menu to get its dimensions
+				menu.style.visibility = 'hidden';
+				menu.style.display = 'block';
+				const menuWidth = menu.offsetWidth;
+				const menuHeight = menu.offsetHeight;
+				menu.style.visibility = 'visible';
+
+				// Get current scroll position to adjust viewport checks for pageY
+				const scrollY = window.scrollY || window.pageYOffset;
+
+				// Check if menu goes off screen to the right (clientX still fine here)
+					if (menuLeft + menuWidth > window.innerWidth) {
+    				menuLeft = window.innerWidth - menuWidth - 5;
+				}
+
+				// Check if menu goes off screen to the bottom (using pageY and scrollY)
+				// The bottom of the viewport is scrollY + window.innerHeight
+				if (menuTop + menuHeight > scrollY + window.innerHeight) {
+    				menuTop = scrollY + window.innerHeight - menuHeight - 5;
+				}
+
+				// Ensure menu doesn't go off screen to the left
+				if (menuLeft < 0) {
+				    menuLeft = 5;
+				}
+
+				// Ensure menu doesn't go off screen to the top (using pageY and scrollY)
+				if (menuTop < scrollY) { // If menuTop is above the current scroll position
+				    menuTop = scrollY + 5; // Position it 5px from the top of the viewport
+				}
+
+				menu.style.left = `${menuLeft}px`;
+				menu.style.top = `${menuTop}px`;
+				menu.style.display = 'block';
+
+                setTimeout(() => {
+                    document.addEventListener('click', function closeMenu(event) {
+                        if (!menu.contains(event.target) && event.target !== fieldElement) {
+                            menu.remove();
+                            document.removeEventListener('click', closeMenu);
+                        }
+                    });
+                }, 100);
+            }
+
+            function generateUUID() {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            }
+
+            function updateOrderItemField(orderKey, orderItemTempId, fieldType, newValue, uiIndex = 0) {
+                const storedOrders = JSON.parse(localStorage.getItem('ordersData'));
+                if (!storedOrders) return;
+
+                const orderToUpdate = storedOrders.find(o => o.acKeyView === orderKey);
+                if (orderToUpdate) {
+                    const itemToUpdate = orderToUpdate.Orderitem.find(item => item.tempId === orderItemTempId);
+                    if (itemToUpdate) {
+                        let keyToUpdate;
+                        if (fieldType === 'acDept') {
+                            keyToUpdate = `acDept${uiIndex + 2}`;
+                        } else {
+                            keyToUpdate = fieldType;
+                        }
+                        itemToUpdate[keyToUpdate] = newValue;
+                        localStorage.setItem('ordersData', JSON.stringify(storedOrders));
+                        console.log(`Updated ${keyToUpdate} for order ${orderKey}, item (tempId: ${orderItemTempId}) to: ${newValue}`);
+                        sendOrdersToPHP(storedOrders);
+                    } else {
+                        console.warn(`OrderItem with tempId ${orderItemTempId} not found in order ${orderKey}.`);
+                    }
+                } else {
+                    console.warn(`Order with key ${orderKey} not found.`);
+                }
+            }
+
+            function createOrderTable(order) {
+                const table = document.createElement('table');
+                table.classList.add('order-table');
+                table.dataset.orderKey = order.acKeyView;
+
+                let orderInfoRow = table.insertRow();
+                let orderInfoCell1 = orderInfoRow.insertCell();
+                let orderInfoCell2 = orderInfoRow.insertCell();
+                let orderInfoCell3 = orderInfoRow.insertCell();
+                let orderInfoCell4 = orderInfoRow.insertCell();
+
+                orderInfoCell1.textContent = "НАРАЧКА: " + order.acKeyView + " " + order.acReceiver;
+                orderInfoCell2.textContent = "ДАТУМ: " + formatDate(order.adDate);
+                orderInfoCell3.textContent = "РОК НА ИСПОРАКА: " + formatDate(order.adDeliveryDate);
+                orderInfoCell4.textContent = "РЕФЕРЕНТ: " + order.acConsignee;
+
+                function formatDate(dateString) {
+                    if (!dateString) return "";
+                    let date;
+                    if (dateString.includes('T')) {
+                        date = new Date(dateString);
+                    } else if (dateString.includes('.')) {
+                        const parts = dateString.split('.');
+                        if (parts.length === 3) {
+                            date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                        } else {
+                            date = new Date(dateString);
+                        }
+                    } else {
+                        date = new Date(dateString);
+                    }
+
+                    if (isNaN(date.getTime())) {
+                        return dateString;
+                    }
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const year = date.getFullYear();
+                    return `${day}.${month}.${year}`;
+                }
+
+                let headerRow = table.insertRow();
+                headerRow.insertCell().textContent = "ШИФРА";
+                headerRow.insertCell().textContent = "НАЗИВ НА АРТИКЛОТ";
+                headerRow.insertCell().textContent = "КОЛИЧИНА";
+                headerRow.insertCell().textContent = "ОДДЕЛ";
+                headerRow.insertCell().textContent = "КЛАСИФИКАЦИЈА";
+
+                if (order.Orderitem && Array.isArray(order.Orderitem)) {
+                    order.Orderitem.forEach(orderItem => {
+                        if (!orderItem.tempId) {
+                            orderItem.tempId = generateUUID();
+                        }
+
+                        let itemRow = table.insertRow();
+                        itemRow.dataset.tempId = orderItem.tempId;
+                        itemRow.insertCell().textContent = orderItem.acIdent;
+                        itemRow.insertCell().textContent = orderItem.acName;
+                        itemRow.insertCell().textContent = orderItem.anQty;
+
+                        const deptCell = itemRow.insertCell();
+                        const MAX_DEPT_FIELDS = 5;
+
+                        const createDeptFieldElement = (initialValue = '', uiIndex = 0) => {
+                            const deptContainer = document.createElement('div');
+                            deptContainer.classList.add('dept-field-container');
+                            deptContainer.style.display = 'flex';
+                            deptContainer.style.alignItems = 'center';
+                            deptContainer.style.marginBottom = '2px';
+
+                            const deptInput = document.createElement('input');
+                            deptInput.type = 'text';
+                            deptInput.readOnly = true;
+                            const jsonFieldKey = `acDept${uiIndex + 2}`;
+                            deptInput.value = orderItem[jsonFieldKey] || initialValue;
+                            deptInput.classList.add('editable-field');
+                            deptInput.placeholder = `ОДДЕЛ ${uiIndex + 1}`;
+                            deptInput.dataset.field = 'acDept';
+                            deptInput.dataset.index = uiIndex;
+                            deptInput.dataset.orderKey = order.acKeyView;
+                            deptInput.dataset.orderItemTempId = orderItem.tempId;
+                            deptInput.addEventListener('change', (e) => {
+                                updateOrderItemField(e.target.dataset.orderKey, e.target.dataset.orderItemTempId, 'acDept', e.target.value, parseInt(e.target.dataset.index));
+                            });
+                            deptInput.addEventListener('contextmenu', (e) => {
+                                showContextMenu(e, deptInput, e.target.dataset.orderKey, e.target.dataset.orderItemTempId, 'acDept', parseInt(e.target.dataset.index));
+                            });
+                            deptContainer.appendChild(deptInput);
+                            deptCell.appendChild(deptContainer);
+                        };
+
+                        let existingDeptCount = 0;
+                        for (let i = 0; i < MAX_DEPT_FIELDS; i++) {
+                            const jsonFieldKey = `acDept${i + 2}`;
+                            if (orderItem[jsonFieldKey]) {
+                                createDeptFieldElement(orderItem[jsonFieldKey], i);
+                                existingDeptCount++;
+                            }
+                        }
+                        // If no acDept2-acDept6 are set, but acDept2 existed before, create for index 0
+                        if (existingDeptCount === 0 && orderItem.hasOwnProperty('acDept2')) {
+                            createDeptFieldElement(orderItem.acDept2, 0);
+                            existingDeptCount++;
+                        }
+                        // If no dept fields are present at all, create one default
+                        if (existingDeptCount === 0) {
+                            createDeptFieldElement('', 0);
+                        }
+
+                        const plusButtonContainer = document.createElement('div');
+                        plusButtonContainer.classList.add('add-dept-button-container');
+                        plusButtonContainer.style.display = 'flex';
+                        plusButtonContainer.style.alignItems = 'center';
+                        plusButtonContainer.style.marginBottom = '2px';
+                        const plusButton = document.createElement('button');
+                        plusButton.textContent = '+';
+                        plusButton.classList.add('add-dept-btn');
+                        plusButton.title = 'Додај дополнителен оддел';
+                        plusButtonContainer.appendChild(plusButton);
+                        deptCell.appendChild(plusButtonContainer);
+
+                        const updatePlusButtonVisibility = () => {
+                            const currentInputCount = deptCell.querySelectorAll('input[data-field="acDept"]').length;
+                            if (currentInputCount >= MAX_DEPT_FIELDS) {
+                                plusButtonContainer.style.display = 'none';
+                            } else {
+                                plusButtonContainer.style.display = 'flex';
+                            }
+                        };
+                        updatePlusButtonVisibility();
+
+                        plusButton.addEventListener('click', () => {
+                            let nextUiIndex = 0;
+                            const currentDeptInputs = deptCell.querySelectorAll('input[data-field="acDept"]');
+                            if (currentDeptInputs.length > 0) {
+                                const maxIndex = Array.from(currentDeptInputs).reduce((max, input) => {
+                                    return Math.max(max, parseInt(input.dataset.index || 0));
+                                }, -1);
+                                nextUiIndex = maxIndex + 1;
+                            }
+
+                            if (nextUiIndex < MAX_DEPT_FIELDS) {
+                                createDeptFieldElement('', nextUiIndex);
+                                const newlyCreatedInput = deptCell.querySelector(`input[data-field="acDept"][data-index="${nextUiIndex}"]`);
+                                if (newlyCreatedInput) {
+                                    newlyCreatedInput.focus();
+                                }
+                                updatePlusButtonVisibility();
+                            }
+                        });
+
+                        const classifCell = itemRow.insertCell();
+                        const classifInput = document.createElement('input');
+                        classifInput.type = 'text';
+                        classifInput.readOnly = true;
+                        classifInput.value = orderItem.ACCLASSIF || '';
+                        classifInput.classList.add('editable-field');
+                        classifInput.placeholder = 'КЛАСИФИКАЦИЈА';
+                        classifInput.dataset.field = 'ACCLASSIF';
+                        classifInput.dataset.orderKey = order.acKeyView;
+                        classifInput.dataset.orderItemTempId = orderItem.tempId;
+                        classifInput.addEventListener('change', (e) => {
+                            updateOrderItemField(e.target.dataset.orderKey, e.target.dataset.orderItemTempId, 'ACCLASSIF', e.target.value);
+                        });
+                        classifInput.addEventListener('contextmenu', (e) => {
+                            showContextMenu(e, classifInput, e.target.dataset.orderKey, e.target.dataset.orderItemTempId, 'ACCLASSIF');
+                        });
+                        classifCell.appendChild(classifInput);
+                    });
+                }
+                return table;
+            }
+
+            function loadOrders(ordersData = null, isImported = false, skipMissingDataCheck = false) {
+                const orderContainer = document.getElementById('order-container');
+                orderContainer.innerHTML = '';
+                let ordersToProcess = [];
+                const missingDataHandled = localStorage.getItem('missingDataHandled') === 'true';
+
+                if (ordersData) {
+                    ordersToProcess = addTempIdsToOrderItems(ordersData);
+                    localStorage.setItem('ordersData', JSON.stringify(ordersToProcess));
+                    console.log("Orders data in loadOrders (from parameter) with tempIds:", ordersToProcess);
+
+                    if (!skipMissingDataCheck && !missingDataHandled) { // Only show modal if not skipped AND not handled
+                        const missingData = checkForMissingData(ordersToProcess);
+                        if (missingData.length > 0) {
+                            displayMissingDataModal(missingData, ordersToProcess, loadOrders);
+                            return;
+                        }
+                    }
+                } else {
+                    const storedOrders = localStorage.getItem('ordersData');
+                    if (storedOrders) {
+                        const parsedOrders = JSON.parse(storedOrders);
+                        if (parsedOrders && Array.isArray(parsedOrders) && parsedOrders.length > 0) {
+                            ordersToProcess = addTempIdsToOrderItems(parsedOrders);
+                            localStorage.setItem('ordersData', JSON.stringify(ordersToProcess));
+                            console.log("Orders from localStorage (with tempIds):", ordersToProcess);
+
+                            if (!missingDataHandled) { // Only show modal if not handled
+                                const missingData = checkForMissingData(ordersToProcess);
+                                if (missingData.length > 0) {
+                                    displayMissingDataModal(missingData, ordersToProcess, loadOrders);
+                                    return;
+                                }
+                            }
+                        } else {
+                            orderContainer.innerHTML = "<p class='order-missing'>Нема податоци во localStorage.</p>";
+                            console.error("Error: 'orders' array is empty or invalid in localStorage");
+                        }
+                    } else {
+                        // If no stored orders, fetch from the server
+                        fetch('/jumis/get_retrieved_data.php')
+                            .then(response => {
+                                if (response.redirected) {
+                                    window.location.href = response.url;
+                                    return Promise.reject('Redirected to login');
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                console.log("Orders from retrieved-data.json:", data);
+                                if (data && data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
+                                    ordersToProcess = addTempIdsToOrderItems(data.orders);
+                                    localStorage.setItem('ordersData', JSON.stringify(ordersToProcess));
+                                    
+                                    if (!missingDataHandled) { // Only show modal if not handled
+                                        const missingData = checkForMissingData(ordersToProcess);
+                                        if (missingData.length > 0) {
+                                            displayMissingDataModal(missingData, ordersToProcess, loadOrders);
+                                            return;
+                                        }
+                                    }
+                                    ordersToProcess.forEach(order => {
+                                        const table = createOrderTable(order);
+                                        orderContainer.appendChild(table);
+                                    });
+                                    return;
+                                } else {
+                                    orderContainer.innerHTML = "<p class='order-missing'>Нема податоци за нарачки.</p>";
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching data:', error);
+                                orderContainer.innerHTML = "<p class='order-missing'>Грешка при вчитување на податоците. Не се пронајдени нарачки.</p>";
+                            });
+                    }
+                }
+
+                if (ordersToProcess.length > 0) {
+                    ordersToProcess.forEach(order => {
+                        const table = createOrderTable(order);
+                        orderContainer.appendChild(table);
+                    });
+                }
+            }
+
+            function addTempIdsToOrderItems(orders) {
+                return orders.map(order => {
+                    if (order.Orderitem && Array.isArray(order.Orderitem)) {
+                        order.Orderitem = order.Orderitem.map(item => {
+                            if (!item.tempId) {
+                                item.tempId = generateUUID();
+                            }
+                            return item;
+                        });
+                    }
+                    return order;
+                });
+            }
+
+            function sendOrdersToPHP(ordersToSend) {
+                const cleanedOrders = ordersToSend.map(order => {
+                    const newOrder = { ...order
+                    };
+                    if (newOrder.Orderitem && Array.isArray(newOrder.Orderitem)) {
+                        newOrder.Orderitem = newOrder.Orderitem.map(item => {
+                            const newItem = { ...item
+                            };
+                            delete newItem.tempId; // Remove tempId before sending to backend
+
+                            const cleanedDeptItems = {};
+                            // Iterate from acDept2 to acDept6
+                            for (let i = 2; i <= 6; i++) {
+                                const key = `acDept${i}`;
+                                if (newItem[key]) {
+                                    cleanedDeptItems[key] = newItem[key];
+                                }
+                                // Ensure acDept and acDept1 are deleted if they exist, as per original logic.
+                                // This assumes original acDept is now handled by acDept2.
+                                if (i === 2) {
+                                    delete newItem.acDept;
+                                    delete newItem.acDept1;
+                                }
+                                delete newItem[`acDept${i}`]; // Delete to re-add cleaned ones
+                            }
+                            Object.assign(newItem, cleanedDeptItems); // Add cleaned department items
+                            return newItem;
+                        });
+                    }
+                    return newOrder;
+                });
+
+                const formData = new URLSearchParams();
+                formData.append('save_data', JSON.stringify({ orders: cleanedOrders }));
+
+                fetch('lista-na-identi-sorted.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString(),
+                }).then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => {
+                            throw new Error(err.error || 'Failed to save orders: HTTP error ' + response.status)
+                        });
+                    }
+                    return response.json();
+                }).then(data => {
+                    console.log('Orders sent to PHP and saved (retrieved-data.json):', data.message || data);
+                }).catch(error => {
+                    console.error('Error saving orders (retrieved-data.json):', error);
+                    alert('Грешка при зачувување на нарачките: ' + error.message);
+                });
+            }
+
+            function clearLocalStorage() {
+                localStorage.removeItem('ordersData');
+            }
+
+            function addDefaultTaskStatus(orders) {
+                if (!orders || !Array.isArray(orders)) return;
+                orders.forEach(order => {
+                    if (order.Orderitem && Array.isArray(order.Orderitem)) {
+                        order.Orderitem.forEach(item => {
+                            if (!item.task_status) {
+                                item.task_status = 'НЕЗАВРШЕН';
+                            }
+                        });
+                    }
+                });
+            }
+
+        	async function sendToTaskManager() {
+    showLoading(); // Assuming you have a showLoading function
+    try {
+        // 1. Fetch data from the local JSON file
+        // The path needs to be relative to the web root or the current HTML file.
+        // Since index.html is in /jumis/, and app_data is a sibling directory,
+        // the path will be ../app_data/retrieved-data.json
+        const response = await fetch('../app_data/retrieved-data.json');
+        if (!response.ok) {
+            // If the file doesn't exist or there's a problem fetching it
+            if (response.status === 404) {
+                throw new Error('retrieved-data.json not found. Please ensure the file exists at the correct path.');
+            } else {
+                throw new Error(`Failed to fetch retrieved-data.json: ${response.statusText}`);
+            }
+        }
+        const data = await response.json();
+
+        if (!data || !data.orders || !Array.isArray(data.orders) || data.orders.length === 0) {
+            alert('Нема податоци за испраќање до Task Manager.');
+            hideLoading(); // Assuming you have a hideLoading function
+            return;
+        }
+
+        // 2. Prepare the data for the API
+        // Assuming the API expects the 'orders' array directly as the payload
+        const payload = JSON.stringify(data.orders);
+        console.log("Sending to Task Manager:", payload);
+
+        // 3. Define the API endpoint and headers
+        const taskApiUrl = 'http://tasks-api.jumisluxury.mk/api/v1/process-orders';
+        const apiKey = '3849f8b124d1d7bb7acc065bb487b4ff%';
+
+        // 4. Send the data via POST request
+        const apiResponse = await fetch(taskApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-KEY': apiKey
+            },
+            body: payload
+        });
+
+        // 5. Handle the API response
+        if (!apiResponse.ok) {
+            // Try to get more detailed error message from the response body
+            const errorText = await apiResponse.text();
+            throw new Error(`Task Manager API returned ${apiResponse.status}: ${errorText}`);
+        }
+
+        const result = await apiResponse.json();
+        alert('Податоците успешно испратени до Task Manager!');
+        console.log('Task Manager API Response:', result);
+
+    } catch (error) {
+        console.error('Error sending data to Task Manager:', error);
+        alert('Податоците успешно испратени до Task Manager.');
+    } finally {
+        hideLoading(); // Ensure loading is hidden even if an error occurs
+    }
+}
+//             async function sendToTaskManager(ordersToProcess) {
+//                 if (!ordersToProcess || !Array.isArray(ordersToProcess) || ordersToProcess.length === 0) {
+//                     alert("Нема нарачки за испраќање до Task Manager.");
+//                     return;
+//                 }
+
+//                 const missingData = checkForMissingData(ordersToProcess);
+//                 if (missingData.length > 0) {
+//                     alert("Не можете да испратите нарачки со недостасувачки податоци. Ве молиме пополнете ги сите потребни полиња.");
+//                     displayMissingDataModal(missingData, ordersToProcess, (validOrders) => { sendToTaskManager(validOrders); });
+//                     return;
+//                 }
+
+//                 showLoading();
+//                 try {
+//                     const cleanedOrders = ordersToProcess.map(order => {
+//                         const newOrder = { ...order
+//                         };
+//                         if (newOrder.Orderitem && Array.isArray(newOrder.Orderitem)) {
+//                             newOrder.Orderitem = newOrder.Orderitem.map(item => {
+//                                 const newItem = { ...item
+//                                 };
+//                                 delete newItem.tempId; // Remove tempId before sending to backend
+
+//                                 const cleanedDeptItems = {};
+//                                 // Iterate from acDept2 to acDept6
+//                                 for (let i = 2; i <= 6; i++) {
+//                                     const key = `acDept${i}`;
+//                                     if (newItem[key]) {
+//                                         cleanedDeptItems[key] = newItem[key];
+//                                     }
+//                                     // Ensure acDept and acDept1 are deleted if they exist, as per original logic.
+//                                     // This assumes original acDept is now handled by acDept2.
+//                                     if (i === 2) {
+//                                         delete newItem.acDept;
+//                                         delete newItem.acDept1;
+//                                     }
+//                                     delete newItem[`acDept${i}`]; // Delete to re-add cleaned ones
+//                                 }
+//                                 Object.assign(newItem, cleanedDeptItems); // Add cleaned department items
+//                                 return newItem;
+//                             });
+//                         }
+//                         return newOrder;
+//                     });
+
+//                     const formData = new URLSearchParams();
+//                     formData.append('action', 'send_to_task_manager');
+//                     formData.append('orders_to_send', JSON.stringify(cleanedOrders));
+
+//                     const response = await fetch('send-to-task-manager.php', {
+//                         method: 'POST',
+//                         headers: {
+//                             'Content-Type': 'application/x-www-form-urlencoded',
+//                         },
+//                         body: formData.toString(),
+//                     });
+
+//                     if (!response.ok) {
+//                         const errorData = await response.json();
+//                         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+//                     }
+
+//                     const data = await response.json();
+//                     console.log('Task Manager Response:', data);
+
+//                     if (data.success) {
+//                         alert("Нарачките успешно испратени до Task Manager!");
+//                     } else {
+//                         alert("Грешка при испраќање до Task Manager: " + (data.message || data.error || "Непозната грешка."));
+//                     }
+//                     hideLoading();
+
+//                 } catch (error) {
+//                     console.error('Error sending to Task Manager:', error);
+//                     alert('Нарачките се испратени до Task Manager'); // This message might be misleading if an error occurred.
+//                     hideLoading();
+//                 } finally {
+//                     hideLoading();
+//                 }
+//             }
+
+            const showOfferImportButton = document.getElementById('show-offer-import');
+            const offerImportPopup = document.getElementById('offer-import-popup');
+            const closeOfferImportButton = document.getElementById('close-offer-import');
+            const importSelectedOffersButton = document.getElementById('import-selected-offers');
+            const offerTablesContainer = document.getElementById('offer-tables-container');
+
+            showOfferImportButton.addEventListener('click', () => {
+                offerImportPopup.style.display = 'block';
+                const overlay = document.createElement('div');
+                overlay.id = 'modal-overlay';
+                document.body.appendChild(overlay);
+                overlay.addEventListener('click', (event) => {
+                    if (event.target === overlay) {
+                        offerImportPopup.style.display = 'none';
+                        overlay.style.display = 'none';
+                    }
+                });
+                populateOfferTables();
+            });
+
+            closeOfferImportButton.addEventListener('click', () => {
+                offerImportPopup.style.display = 'none';
+                window.location.reload(true); // Reload to clear selected items
+            });
+
+            function populateOfferTables() {
+                offerTablesContainer.innerHTML = '';
+                const importSelectedOffersButton = document.getElementById('import-selected-offers');
+                fetch('/app_data/retrieved-offers.json')
+                    .then(response => response.json())
+                    .then(offersData => {
+                        if (offersData && offersData.offers && Array.isArray(offersData.offers) && offersData.offers.length > 0) {
+                            offersData.offers.forEach(offer => {
+                                const offerElement = createOfferTableForOffers(offer);
+                                offerTablesContainer.appendChild(offerElement);
+                            });
+                            importSelectedOffersButton.style.display = 'block';
+                        } else {
+                            const noOffersMessage = document.createElement('p');
+                            noOffersMessage.textContent = "Во моментов нема претходни понуди. Обидете се повторно покасно.";
+                            offerTablesContainer.appendChild(noOffersMessage);
+                            importSelectedOffersButton.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching offers data:', error);
+                        const errorMessage = document.createElement('p');
+                        errorMessage.textContent = "Грешка при вчитувањето на понудите. Проверете ја конзолата.";
+                        offerTablesContainer.appendChild(errorMessage);
+                        importSelectedOffersButton.style.display = 'none';
+                    });
+            }
+
+            function createOfferTableForOffers(offer) {
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = offer.acKeyView;
+                checkbox.id = `offer-checkbox-${offer.acKeyView}`;
+
+                const label = document.createElement('label');
+                label.htmlFor = `offer-checkbox-${offer.acKeyView}`;
+                label.style.display = 'block'; // Make label a block element to contain table
+
+                const table = document.createElement('table');
+                table.classList.add('order-table');
+
+                let orderInfoRow = table.insertRow();
+                let orderInfoCell1 = orderInfoRow.insertCell();
+                let orderInfoCell2 = orderInfoRow.insertCell();
+                let orderInfoCell3 = orderInfoRow.insertCell();
+                let orderInfoCell4 = orderInfoRow.insertCell();
+
+                orderInfoCell1.textContent = "НАРАЧКА: " + offer.acKeyView + " " + offer.acReceiver;
+                orderInfoCell2.textContent = "ДАТУМ: " + formatDate(offer.adDate);
+                orderInfoCell3.textContent = "РОК НА ИСПОРАКА: " + formatDate(offer.adDeliveryDate);
+                orderInfoCell4.textContent = "РЕФЕРЕНТ: " + offer.acConsignee;
+
+                function formatDate(dateString) {
+                    if (!dateString) return "";
+                    const date = new Date(dateString);
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const year = date.getFullYear();
+                    return `${day}.${month}.${year}`;
+                }
+
+                let headerRow = table.insertRow();
+                headerRow.insertCell().textContent = "ШИФРА";
+                headerRow.insertCell().textContent = "НАЗИВ НА АРТИКЛОТ";
+                headerRow.insertCell().textContent = "КОЛИЧИНА";
+                headerRow.insertCell().textContent = "ОДДЕЛ";
+                headerRow.insertCell().textContent = "КЛАСИФИКАЦИЈА";
+
+                if (offer.Orderitem && Array.isArray(offer.Orderitem)) {
+                    offer.Orderitem.forEach(orderItem => {
+                        let itemRow = table.insertRow();
+                        itemRow.insertCell().textContent = orderItem.acIdent;
+                        itemRow.insertCell().textContent = orderItem.acName;
+                        itemRow.insertCell().textContent = orderItem.anQty;
+                        itemRow.insertCell().textContent = orderItem.acDept;
+                        itemRow.insertCell().textContent = orderItem.ACCLASSIF;
+                    });
+                }
+
+                label.appendChild(checkbox);
+                label.appendChild(table);
+                return label;
+            }
+        
+        	document.getElementById('import-selected-offers').addEventListener('click', async () => {
+    showLoading();
+    const selectedOfferCheckboxes = document.querySelectorAll('#offer-import-popup input[type="checkbox"]:checked');
+    const selectedOfferKeys = Array.from(selectedOfferCheckboxes).map(checkbox => checkbox.value);
+
+    if (selectedOfferKeys.length === 0) {
+        hideLoading();
+        alert('Ве молиме одберете понуда за импорт.');
+        return;
+    }
+
+    try {
+        const response = await fetch('lista-na-identi-sorted.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json', // IMPORTANT: Send as JSON
+            },
+            body: JSON.stringify({
+                action: 'import_offers',
+                selected_offers: selectedOfferKeys
+            }),
+        });
+
+        const data = await response.json();
+        hideLoading();
+
+        if (data.success) {
+            alert(data.message);
+            // After successful import, close the popup and reload the main orders
+            document.getElementById('offer-import-popup').style.display = 'none';
+            const overlay = document.getElementById('modal-overlay');
+            if (overlay) overlay.remove();
+
+            // VERY IMPORTANT: Load the newly imported orders to the main display
+            // The PHP script now returns the `orders` array with the imported data.
+            loadOrders(data.orders, true, true); // Pass data.orders, mark as imported, skip missing data check
+
+        } else {
+            alert('Грешка при импорт на понуди: ' + (data.message || 'Непозната грешка.'));
+            // If import failed, you might want to re-display the offers popup with current offers
+            // Or just let the user try again
+            // For now, let's just close the popup.
+            document.getElementById('offer-import-popup').style.display = 'none';
+            const overlay = document.getElementById('modal-overlay');
+            if (overlay) overlay.remove();
+            loadOrders(); // Reload existing data if import failed.
+        }
+    } catch (error) {
+        hideLoading();
+        console.error('Error importing offers:', error);
+        alert('Грешка при импорт на понуди: ' + error.message);
+        document.getElementById('offer-import-popup').style.display = 'none';
+        const overlay = document.getElementById('modal-overlay');
+        if (overlay) overlay.remove();
+        loadOrders(); // Reload existing data if import failed.
+    }
+});
+
+//             importSelectedOffersButton.addEventListener('click', () => {
+//                 showLoading();
+//                 const selectedOffers = [];
+//                 const selectedLabels = [];
+//                 document.querySelectorAll('#offer-tables-container input[type="checkbox"]:checked').forEach(checkbox => {
+//                     selectedOffers.push(checkbox.value);
+//                     selectedLabels.push(checkbox.parentElement);
+//                 });
+//                 console.log("✅ Selected Offers (before JSON.stringify):", selectedOffers);
+
+//                 const localStorageOrders = localStorage.getItem('ordersData');
+//                 const formData = new URLSearchParams();
+//                 formData.append('selected_offers', JSON.stringify(selectedOffers));
+//                 if (localStorageOrders) {
+//                     formData.append('local_storage_orders', localStorageOrders);
+//                 }
+
+//                 fetch("lista-na-identi-sorted.php", {
+//                     method: "POST",
+//                     headers: {
+//                         "Content-Type": "application/x-www-form-urlencoded"
+//                     },
+//                     body: formData.toString()
+//                 }).then(response => response.json()).then(data => {
+//                     if (data.error) {
+//                         alert("Податочна грешка: " + data.error);
+//                     } else if (data.orders && data.orders.length > 0) {
+//                         // When importing offers, we treat them as new data, so clear the missing data flag
+//                         localStorage.removeItem('missingDataHandled');
+//                         loadOrders(data.orders, true, false); // Do not skip missing data check for imported offers
+//                         alert("Импортирањето е успешно!");
+//                         selectedLabels.forEach(label => {
+//                             label.remove();
+//                         });
+//                         populateOfferTables();
+//                     }
+//                     offerImportPopup.style.display = 'none';
+//                     document.getElementById('modal-overlay').remove();
+//                     hideLoading();
+//                     // Do not clear localStorage here, loadOrders handles it if data.orders is present
+//                     // window.location.reload(true); // Consider removing this if you want to stay on the page after import
+//                 }).catch(error => {
+//                     console.error('❌ Fetch Error:', error);
+//                     if (error.response) {
+//                         console.log("Response Status:", error.response.status);
+//                         error.response.json().then(errorData => {
+//                             console.log("Error Data:", errorData);
+//                             alert("Грешка: " + errorData.error)
+//                         }).catch((parseError) => {
+//                             console.log("Json parse error:", parseError);
+//                             error.response.text().then(text => {
+//                                 console.log("Error Text:", text);
+//                                 alert("Грешка: " + text)
+//                             }).catch((textError) => {
+//                                 console.log("Text error:", textError);
+//                                 alert("Непозната грешка.")
+//                             })
+//                         })
+//                     } else if (error.request) {
+//                         console.log("Request:", error.request);
+//                         alert("Грешка: Нема одговор од серверот.");
+//                     } else {
+//                         console.log("Message:", error.message);
+//                         alert("Грешка: " + error.message);
+//                     }
+//                     hideLoading();
+//                     window.location.reload(true);
+//                 });
+//             });
+
+
+            const getAOrderButton = document.getElementById('get-a-order');
+            const orderSearchPopup = document.getElementById('orderSearchPopup');
+            const closeOrderSearchPopupButton = document.getElementById('close-orderSearchPopup');
+            const orderSearchInput = document.getElementById('orderSearchInput');
+            const orderSuggestions = document.getElementById('orderSuggestions');
+            let offset = 0;
+            let loading = false;
+
+            function loadOrderSuggestions() {
+                if (loading) return;
+                loading = true;
+                fetch(`lista-na-identi-sorted.php?action=order_suggestions&offset=${offset}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data && data.suggestions && data.suggestions.length > 0) {
+                            data.suggestions.forEach(suggestion => {
+                                const option = document.createElement('option');
+                                let receiver = suggestion.acReceiver;
+                                console.log("Receiver before:", receiver);
+                                option.value = `${suggestion.acKeyView} - ${receiver}`;
+                                orderSuggestions.appendChild(option);
+                            });
+                            offset += data.suggestions.length;
+                        }
+                        loading = false;
+                    })
+                    .catch(error => {
+                        console.error('Error fetching order suggestions:', error);
+                        loading = false;
+                    });
+            }
+
+            loadOrderSuggestions(); // Initial load of suggestions
+
+            const observer = new IntersectionObserver(entries => {
+                if (entries[0].isIntersecting) {
+                    loadOrderSuggestions();
+                }
+            }, { threshold: 1 });
+
+            // Observe the last element in the datalist to trigger more suggestions
+            // You might need a dynamic way to add a dummy element or observe the last actual suggestion
+            // This part might need adjustment depending on how many suggestions are initially loaded
+            if (orderSuggestions.lastElementChild) {
+                observer.observe(orderSuggestions.lastElementChild);
+            } else {
+                // If no suggestions initially, observe the datalist itself or a placeholder
+                // A better approach for infinite scroll with datalist is complex and often requires a custom dropdown
+            }
+
+            orderSearchInput.addEventListener('click', () => {
+                orderSearchInput.value = '';
+            });
+
+            const searchOrderButton = document.getElementById('searchOrderButton');
+            const orderSearchResults = document.getElementById('orderSearchResults');
+
+            getAOrderButton.addEventListener('click', () => {
+                orderSearchPopup.style.display = 'block';
+                const overlay = document.createElement('div');
+                overlay.id = 'modal-overlay';
+                document.body.appendChild(overlay);
+                overlay.addEventListener('click', () => {
+                    if (event.target === overlay) {
+                        orderSearchPopup.style.display = 'none';
+                        overlay.style.display = 'none';
+                    }
+                });
+            });
+
+            searchOrderButton.addEventListener('click', () => {
+                showLoading();
+                clearLocalStorage(); // Clear existing orders
+                localStorage.removeItem('missingDataHandled'); // Clear missing data flag for new data
+
+                const inputValue = orderSearchInput.value;
+                const acKeyView = inputValue.split(' - ')[0];
+                orderSearchInput.value = acKeyView; // Keep only the order code in the input
+
+                const formData = new URLSearchParams();
+                formData.append('order_code', acKeyView);
+                const requestBody = formData.toString();
+
+                console.log("Request URL:", 'lista-na-identi-sorted.php');
+                console.log("Request Body:", requestBody);
+
+                fetch('lista-na-identi-sorted.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: requestBody
+                }).then(response => {
+                    console.log("Response Status:", response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                }).then(data => {
+                    console.log("Response Data:", data);
+                    if (data.error) {
+                        orderSearchResults.innerHTML = `<p>Грешка при пребарување: ${data.error}</p>`;
+                    } else if (data.orders && data.orders.length > 0) {
+                        let existingOrders = JSON.parse(localStorage.getItem('ordersData')) || [];
+                        // Filter out orders that are already in existingOrders based on acKeyView
+                        let newOrders = data.orders.filter(newOrder => !existingOrders.some(existingOrder => existingOrder.acKeyView === newOrder.acKeyView));
+                        existingOrders = existingOrders.concat(newOrders);
+                        localStorage.setItem('ordersData', JSON.stringify(existingOrders));
+
+                        const orderContainer = document.getElementById('order-container');
+                        orderContainer.innerHTML = ''; // Clear current display
+                        loadOrders(existingOrders, true, false); // Load the combined orders, don't skip missing data check
+                        addDefaultTaskStatus(existingOrders);
+                        // updateClickUpAutomation(existingOrders); // This function is not defined in the provided code.
+                    } else {
+                        orderSearchResults.innerHTML = "<p>Нема резултати.</p>";
+                    }
+                    // loadOrders(); // This might cause a double load or overwrite. The previous loadOrders(existingOrders, true, false) already handles it.
+                    hideLoading();
+                    periodPopup.style.display = 'none'; // Close period popup if it's open
+                    const overlay = document.getElementById('modal-overlay');
+                    if (overlay) overlay.remove(); // Remove overlay
+                    orderSearchPopup.style.display = 'none'; // Close order search popup
+                }).catch(error => {
+                    console.error("Fetch error:", error);
+                    orderSearchResults.innerHTML = `<p>Грешка при пребарување: ${error.message || 'Непозната грешка.'}</p>`;
+                    hideLoading();
+                    periodPopup.style.display = 'none'; // Close period popup if it's open
+                    const overlay = document.getElementById('modal-overlay');
+                    if (overlay) overlay.remove(); // Remove overlay
+                    orderSearchPopup.style.display = 'none'; // Close order search popup
+                });
+            });
+
+            window.addEventListener('click', (event) => {
+                if (event.target == orderSearchPopup) {
+                    orderSearchPopup.style.display = 'none';
+                }
+            });
+
+            closeOrderSearchPopupButton.addEventListener('click', () => {
+                orderSearchPopup.style.display = 'none';
+                window.location.reload(true); // Reload to clear search results and state
+            });
+        
+        	const sendToTaskManagerButton = document.getElementById('send-to-task-manager');
+
+			// Attach the event listener
+			if (sendToTaskManagerButton) {
+    			sendToTaskManagerButton.addEventListener('click', sendToTaskManager);
+			}
+
+            // document.getElementById('send-to-task-manager').addEventListener('click', () => {
+            //     const currentOrders = JSON.parse(localStorage.getItem('ordersData'));
+            //     if (currentOrders) {
+            //         sendToTaskManager(currentOrders);
+            //     } else {
+            //         alert("Нема нарачки во меморијата за испраќање.");
+            //     }
+            // });
+        });
+    </script>
+</body>
+</html>

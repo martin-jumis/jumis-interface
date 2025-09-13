@@ -1,0 +1,586 @@
+@font-face {
+font-family: 'PFBeauSansPro';
+font-style: normal;
+font-weight: normal;
+src: local('PFBeauSansPro'), url('PFBeauSansPro-Regular.ttf') format('woff');
+}
+html {
+    background-color: #433e3f;
+}
+body {
+    font-family: 'PFBeauSansPro', sans-serif;
+    margin: 0; /* Remove default body margin */
+}
+.taskbar {
+    background-color: #332f30;
+    padding: 20px 30px;
+    display: flex;
+    justify-content: space-between;
+    width: calc(100% - 60px);
+    position: fixed;
+    top: 0;
+}
+.logo {
+    max-height: 40px;
+    margin-right: 10px;
+}
+.buttons {
+    display: flex;
+}
+.buttons button {
+    margin-left: 10px;
+    padding: 8px 12px;
+    border: none;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+}
+.buttons button:hover { 
+    box-shadow: 1px 1px 15px #ccc;
+    transition: background-color 0.3s ease;
+}
+.buttons button.get-today-orders {
+    background-color: #ab2a2a;
+}
+.buttons button.get-a-order {
+    background-color: #9d8600;
+}
+.buttons button#show-offer-import {
+    background-color: #05761f;
+}
+.taskbar .buttons button i:before {
+    margin-right: 5px !important;
+}
+.taskbar .buttons button#logout-button i:before {
+    margin-right: 0 !important;
+}
+#order-container {
+    padding: 120px 30px 30px 30px;
+    height: calc(100% - 110px) !important;
+}
+.order-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 30px;
+    background: #eee;
+    display: inline-block;
+    box-shadow: 2px 2px 20px #a0522d57;
+}
+.order-table:first-child {
+    width: 100%;
+    margin-top: 0;
+}
+.order-table tbody,
+.order-table tbody tr {
+    width: 100%;
+    float: left;
+    display: table;
+}
+.order-table tbody tr:nth-of-type(even) {
+    background: #c0b9b596;
+    color: #222;
+}
+.order-table tbody tr:first-child {
+    background: #635b5c;
+    color: #ddd;
+}
+.order-table tbody tr:nth-of-type(2) {
+    background: #736b6cd6;
+    color: #fff;
+}
+.order-table tbody tr td {
+    width: 20%;
+}
+.order-table tbody tr:first-child td {
+    width: unset;
+}
+.order-table th,
+.order-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+.order-info {
+    background-color: #f8f8f8;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+.order-table.missing tbody tr th:nth-of-type(1) {
+    width: 57px !important;
+    text-align: center
+}
+.order-table.missing tbody tr th:nth-of-type(2) {
+    width: 106px;
+}
+.order-table.missing tbody tr th {
+    font-weight: normal !important;
+}
+/***** Design for the popups *****/
+#offer-import-popup {
+    width: 91vw !important;
+}
+#period-popup,
+#orderSearchPopup {
+    text-align: center;
+}
+#offer-import-popup,
+#period-popup,
+#orderSearchPopup {
+    display: none;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: white;
+    padding: 30px;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    position: fixed;
+    z-index: 1000;
+    max-height: 80vh;
+    overflow: visible;
+    width: 640px;
+}
+#orderSearchPopup {
+    width: 710px;
+}
+#offer-import-popup buton,
+#period-popup button,
+#orderSearchPopup button,
+#offer-import-popup button, #missing-data-modal button {
+    background-color: #635b5c !important;
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 4px 2px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+}
+#offer-import-popup input,
+#period-popup input,
+#orderSearchPopup input,
+#offer-import-popup input {
+    height: 35px;
+    padding: 0 11px;
+    border: 1px solid #635b5c;
+    border-radius: 3px;
+}
+#orderSearchPopup input {
+    width: 370px;
+}
+#period-popup input {
+    min-width: 180px;
+}
+#period-popup input:before {
+  content: "$";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #999;
+  pointer-events: none;
+}
+#offer-import-popup buton:hover,
+#period-popup button:hover,
+#orderSearchPopup button:hover {
+    background-color: #433e3f;
+}
+#offer-import-popup buton.cancel,
+#period-popup button.cancel,
+#orderSearchPopup button.cancel {
+    background-color: #f44336;
+}
+#offer-import-popup buton.cancel:hover,
+#period-popup button.cancel:hover,
+#orderSearchPopup button.cancel:hover {
+    background-color: #da190b;
+}
+#offer-import-popup h2, #period-popup h2, #orderSearchPopup h2 {
+    margin-top: 0;
+}
+#offer-import-popup h2, #period-popup {
+    text-align: center;
+}
+#offer-import-popup table {
+    width: 100%;
+    border-collapse: collapse;
+}
+#offer-import-popup th,
+#offer-import-popup td {
+    border: 1px solid #ddd;
+    padding: 8px;
+}
+#offer-import-popup .order-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+#offer-import-popup .order-table th,
+#offer-import-popup .order-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+#offer-import-popup input[type="checkbox"],
+#missing-data-modal input[type="checkbox"] {
+    vertical-align: middle;
+    appearance: none;
+    background-color: #fff;
+    color: #333;
+    width: 25px;
+    height: 25px;
+    border: 2px solid #bbb;
+    border-radius: 3px;
+}
+#offer-import-popup tr.order-info-row td {
+    font-weight: bold;
+    background-color: #f0f0f0;
+}
+#offer-import-popup input[type="checkbox"],
+#missing-data-modal input[type="checkbox"] {
+    margin-right: 15px;
+    display: grid;
+    place-content: center;
+}
+#offer-import-popup input[type="checkbox"]::before,
+#missing-data-modal input[type="checkbox"]::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    transform: scale(0);
+    transition: 120ms transform ease-in-out;
+    box-shadow: inset 1em 1em #444;
+}
+#offer-import-popup input[type="checkbox"]:checked::before,
+#missing-data-modal input[type="checkbox"]:checked::before {
+    transform: scale(1);
+}
+#missing-data-modal input[type="checkbox"] {
+    margin: 0 !important;
+    display: inline-grid !important;
+    width: 18px;
+    height: 18px;
+}
+#offer-tables-container, .order-table.missing {
+    overflow-y: scroll;
+    overflow-x: hidden;
+    max-height: 60vh;
+    margin-bottom: 30px;
+    scrollbar-color: #444 transparent;
+    scrollbar-width: 10px;
+    scrollbar-shadow-color: #ccc;
+    align-content: center;
+    display: block;
+}
+#close-offer-import,
+#close-period-popup,
+#close-orderSearchPopup,
+#close-missing-data-modal {
+    position: absolute;
+    right: 20px;
+    top: 25px;
+    padding: 5px 10px !important;
+}
+#offer-tables-container label {
+    display: inline-flex !important;
+    width: 100%;
+    align-items: center;
+}
+#offer-tables-container p,
+#missing-data-modal h3,
+.order-missing {
+    text-align: center;
+    color: red;
+}
+#offer-tables-container p,
+.order-missing {
+    background: #fff;
+    padding: 30px;
+    font-weight: bold;
+}
+#import-selected-offers, #continue-import, #terminate-import {
+    float: right;
+}
+#missing-data-modal #terminate-import {
+    background-color: #ab2a2a !important;
+}
+#orderSearchPopup h2 {
+    margin-top: 0;
+}
+#orderSearchResults {
+    margin-top: 10px;
+    display: none;
+}
+#orderSearchResults table {
+    width: 100%;
+    border-collapse: collapse;
+}
+#orderSearchResults th,
+#orderSearchResults td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+.order-table {
+    display: flex;
+    align-items: center;
+}
+.order-table.missing {
+    margin-bottom: 30px;
+}
+#offer-import-popup label:first-child .order-table {
+    margin-top: 0 !important;
+}
+#offer-import-popup label .order-table {
+    margin-right: 15px !important;
+}
+body::-webkit-scrollbar-thumb {
+    background-color: #000 ;
+    border-radius: 5px;
+    border: 3px solid #000;
+}
+/***** Styles for the loading ring *****/
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1001; /* Ensure it's on top */
+}
+.loading-spinner {
+    border: 8px solid #f3f3f3; /* Light grey */
+    border-top: 8px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 2s linear infinite;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+/* Style for the missing data modal */
+#missing-data-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: white;
+    padding: 30px;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+}
+#missing-data-modal h3 {
+    margin-top: 0;
+    padding: 0 30px;
+}
+#missing-data-modal ul {
+    list-style-type: none;
+    padding: 0;
+}
+#missing-data-modal li {
+    margin-bottom: 5px;
+}
+/* Style for the overlay */
+#modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+    z-index: 999; /* Below the modal */
+}
+
+
+/* Styles for editable fields */
+.editable-field {
+    border: 1px solid #ccc;
+    padding: 5px;
+    border-radius: 4px;
+    min-width: 80px; /* Adjust as needed */
+    display: inline-block; /* To allow + button next to it */
+    margin-bottom: 2px; /* Spacing for multiple dept fields */
+}
+
+.editable-field:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    outline: none;
+}
+
+/* Context Menu */
+.context-menu {
+    display: none;
+    position: absolute; /* Use fixed for positioning relative to viewport */
+    background-color: white;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    z-index: 2000; /* Ensure it's above other elements */
+    max-height: 200px; /* Limit height for scroll */
+    overflow-y: auto;
+}
+
+.context-menu ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.context-menu li {
+    padding: 8px 15px;
+    cursor: pointer;
+    white-space: nowrap; /* Prevent wrapping for long values */
+}
+
+.context-menu li:hover {
+    background-color: #f0f0f0;
+}
+
+/* Plus button for adding new departments */
+.add-dept-btn {
+    background-color: #28a745; /* Green */
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    line-height: 1; /* For vertical alignment of plus sign */
+    cursor: pointer;
+    margin-left: 5px;
+    vertical-align: middle; /* Align with input field */
+    display: inline-flex; /* Use flex to center content */
+    justify-content: center;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.order-table tbody tr td:nth-of-type(4) button {
+    margin-top: -35px;
+    margin-left: calc(100% - 30px);
+}
+
+.order-table tbody tr td:nth-of-type(4) div .editable-field {
+    width: calc(100% - 50px);
+}
+
+.order-table tbody tr td:nth-of-type(5) .editable-field {
+    width: calc(100% - 13px);
+}
+
+.add-dept-btn:hover {
+    background-color: #218838;
+}
+#send-to-task-manager {
+    background-color: #5220ff;
+    color: white;
+}
+input.editable-field::placeholder {
+    color: red !important;
+    font-weight: bold;
+}
+/**** Login Form Design ****/
+/* Styles for login form */
+#login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #f4f7f6;
+}
+.login-box {
+    background-color: #fff;
+    padding: 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    width: 350px;
+}
+.login-box h2 {
+    margin-bottom: 30px;
+    color: #333;
+}
+.input-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #555;
+}
+.input-group input[type="text"],
+.input-group input[type="password"] {
+    width: calc(100% - 20px);
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+.login-box button {
+    width: 100%;
+    padding: 12px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+.login-box button:hover {
+    background-color: #45a049;
+}
+#login-error-message {
+    color: red;
+    margin-top: 15px;
+    font-size: 14px;
+}
+/* Hide main content until logged in */
+#main-content {
+    display: none; /* This will be toggled by JavaScript */
+}
+.taskbar .user-info {
+    display: flex;
+    align-items: center;
+    margin-left: auto; /* Push to the right */
+}
+.taskbar .user-info span {
+    margin-right: 15px;
+    font-weight: bold;
+    color: #fff;
+}
+.taskbar .user-info button {
+    padding: 8px 15px;
+    background-color: #dc3545; /* Red for logout */
+    color: white;
+    border: none;
+    height: 100%;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+.taskbar .user-info button:hover {
+    background-color: #c82333;
+}
+/* Style for already selected context menu options */
+.context-menu li.selected-context-option {
+    color: #888; /* Grey text */
+    background-color: #f5f5f5; /* Slightly different background */
+    cursor: not-allowed; /* Change cursor to indicate it's not clickable */
+    font-style: italic; /* Optional: make it italic */
+}
