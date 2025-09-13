@@ -1156,30 +1156,30 @@
         // The path needs to be relative to the web root or the current HTML file.
         // Since index.html is in /jumis/, and app_data is a sibling directory,
         // the path will be ../app_data/retrieved-data.json
-        const response = await fetch('../app_data/retrieved-data.json');
-        if (!response.ok) {
-            // If the file doesn't exist or there's a problem fetching it
-            if (response.status === 404) {
-                throw new Error('retrieved-data.json not found. Please ensure the file exists at the correct path.');
-            } else {
-                throw new Error(`Failed to fetch retrieved-data.json: ${response.statusText}`);
-            }
-        }
-        const data = await response.json();
-
-        if (!data || !data.orders || !Array.isArray(data.orders) || data.orders.length === 0) {
-            alert('Нема податоци за испраќање до Task Manager.');
-            hideLoading(); // Assuming you have a hideLoading function
-            return;
-        }
+        // const response = await fetch('../app_data/retrieved-data.json');
+        // if (!response.ok) {
+        //     // If the file doesn't exist or there's a problem fetching it
+        //     if (response.status === 404) {
+        //         throw new Error('retrieved-data.json not found. Please ensure the file exists at the correct path.');
+        //     } else {
+        //         throw new Error(`Failed to fetch retrieved-data.json: ${response.statusText}`);
+        //     }
+        // }
+        // const data = await response.json();
+        //
+        // if (!data || !data.orders || !Array.isArray(data.orders) || data.orders.length === 0) {
+        //     alert('Нема податоци за испраќање до Task Manager.');
+        //     hideLoading(); // Assuming you have a hideLoading function
+        //     return;
+        // }
 
         // 2. Prepare the data for the API
         // Assuming the API expects the 'orders' array directly as the payload
-        const payload = JSON.stringify(data.orders);
-        console.log("Sending to Task Manager:", payload);
+        // const payload = JSON.stringify(data.orders);
+        // console.log("Sending to Task Manager:", payload);
 
         // 3. Define the API endpoint and headers
-        const taskApiUrl = 'http://tasks-api.jumisluxury.mk/api/v1/process-orders';
+        const taskApiUrl = 'https://tasks-api.jumisluxury.mk/api/v1/process-orders';
         const apiKey = '3849f8b124d1d7bb7acc065bb487b4ff%';
 
         // 4. Send the data via POST request
@@ -1189,7 +1189,6 @@
                 'Content-Type': 'application/json',
                 'X-API-KEY': apiKey
             },
-            body: payload
         });
 
         // 5. Handle the API response
